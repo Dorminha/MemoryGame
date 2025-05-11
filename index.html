@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jogo da Memória com Emojis e Teclado</title>
+<style>
+  body {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    font-family: 'Segoe UI Emoji', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    color: #fff;
+    user-select: none;
+  }
+  h1 {
+    margin: 1rem 0 0.5rem;
+    font-weight: 700;
+    text-shadow: 1px 1px 4px rgba(0,0,0,0.5);
+  }
+  #instructions {
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    max-width: 400px;
+    text-align: center;
+    line-height: 1.3;
+    color: #ddd;
+  }
+  #game-board {
+    width: 360px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-gap: 12px;
+    perspective: 1000px;
+  }
+  .card {
+    width: 80px;
+    height: 80px;
+    background: #444;
+    border-radius: 12px;
+    cursor: pointer;
+    position: relative;
+    transform-style: preserve-3d;
+    transition: transform 0.5s;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.8rem;
+  }
+  .card.flipped {
+    transform: rotateY(180deg);
+    cursor: default;
+  }
+  .card.matched {
+    cursor: default;
+    box-shadow: 0 0 15px 3px #00ff99;
+    background: #222;
+  }
+  .card .front,
+  .card .back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 12px;
+    backface-visibility: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card .front {
+    background: #fff;
+    color: #222;
+    font-size: 2.8rem;
+  }
+  .card .back {
+    background: #444;
+    transform: rotateY(180deg);
+    font-size: 2.8rem;
+  }
+  /* Destaque do foco para navegação com teclado */
+  .card:focus {
+    outline: 3px solid #00ff99;
+    outline-offset: 3px;
+  }
+  #status {
+    margin-top: 1rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    text-shadow: 1px 1px 3px rgba(0,0,0,0.6);
+  }
+  #reset-btn {
+    margin-top: 1.5rem;
+    background: #00ff99;
+    border: none;
+    border-radius: 8px;
+    padding: 0.6rem 1.2rem;
+    font-weight: 700;
+    color: #222;
+    cursor: pointer;
+    box-shadow: 0 3px 6px rgba(0,255,153,0.5);
+    transition: background-color 0.3s;
+  }
+  #reset-btn:hover {
+    background: #00cc77;
+  }
+</style>
+</head>
+<body>
+
+<h1>Jogo da Memória com Emojis</h1>
+<div id="instructions">
+  Use as <strong>setas do teclado</strong> para navegar entre as cartas e <strong>Enter</strong> para virar.<br />
+  Encontre todos os pares para vencer!
+</div>
+
+<div id="game-board" tabindex="0" aria-label="Tabuleiro do jogo da memória"></div>
+
+<div id="status" aria-live="polite"></div>
+<button id="reset-btn" aria-label="Reiniciar o jogo">Reiniciar Jogo</button>
+
+<script>
+(() => {
+  // Lista de emojis para o jogo (8 pares)
+  const emojis = ['🐶','🐱','🦊','🐻','🐼','🐨','🐯','🦁'];
+  let cards = [];
+  let firstCard = null;
+  let secondCard = null;
+  let lockBoard = false;
+  let matchesFound = 0;
+  let totalPairs = emojis.length;
+  let focusedIndex = 0;
+
+  const board = document.getElementById('game-board');
+  const status = document.getElementById('status');
+  const resetBtn = document.getElementById('reset-btn');
+
+  // Função para embaralhar array (Fisher-Yates)
+  function shuffle(array) {
+    let currentIndex = array.length, randomIndex;
+    while (currentIndex !== 0) {
+      randomIndex = Math.floor(Math.random() * currentIndex);
+      currentIndex--;
+      [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+    }
+    return array;
+  }
+
+  // Cria as cartas duplicando emojis e embaralhando
+  function createCards() {
+    const doubleEmojis = [...emojis, ...emojis];
+    cards = shuffle(doubleEmojis);
+  }
+
+  // Cria o HTML das cartas no tabuleiro
+  function renderBoard() {
+    board.innerHTML = '';
+    cards.forEach((emoji, index) => {
+      const card = document.createElement('button');
+      card.classList.add('card');
+      card.setAttribute('data-emoji', emoji);
+      card.setAttribute('aria-label', 'Carta fechada');
+      card.setAttribute('aria-pressed', 'false');
+      card.setAttribute('tabindex', '-1');
+      card.dataset.index = index;
+
+      // Frente da carta: emoji
+      const front = document.createElement('div');
+      front.classList.add('front');
+      front.textContent = emoji;
+
+      // Verso da carta: padrão
+      const back = document.createElement('div');
+      back.classList.add('back');
+      back.textContent = '❓';
+
+      card.appendChild(front);
+      card.appendChild(back);
+
+      board.appendChild(card);
+    });
+  }
+
+  // Atualiza status de foco no teclado
+  function updateFocus() {
+    const cardElements = board.querySelectorAll('.card');
+    cardElements.forEach((card, i) => {
+      card.tabIndex = (i === focusedIndex) ? 0 : -1;
+    });
+    cardElements[focusedIndex].focus();
+  }
+
+  // Função para virar carta
+  function flipCard(card) {
+    if (lockBoard) return;
+    if (card === firstCard) return; // não virar a mesma carta duas vezes
+
+    card.classList.add('flipped');
+    card.setAttribute('aria-label', `Carta aberta mostrando ${card.dataset.emoji}`);
+    card.setAttribute('aria-pressed', 'true');
+
+    if (!firstCard) {
+      firstCard = card;
+      return;
+    }
+    secondCard = card;
+    lockBoard = true;
+
+    // Verifica se as cartas batem
+    if (firstCard.dataset.emoji === secondCard.dataset.emoji) {
+      // Match encontrado
+      firstCard.classList.add('matched');
+      secondCard.classList.add('matched');
+      matchesFound++;
+      status.textContent = `Par encontrado! Total de pares: ${matchesFound} de ${totalPairs}`;
+      resetTurn();
+      if (matchesFound === totalPairs) {
+        status.textContent = '🎉 Parabéns! Você encontrou todos os pares! 🎉';
+      }
+    } else {
+      // Não bateu, vira de volta após delay
+      status.textContent = 'Tente novamente...';
+      setTimeout(() => {
+        firstCard.classList.remove('flipped');
+        secondCard.classList.remove('flipped');
+        firstCard.setAttribute('aria-label', 'Carta fechada');
+        firstCard.setAttribute('aria-pressed', 'false');
+        secondCard.setAttribute('aria-label', 'Carta fechada');
+        secondCard.setAttribute('aria-pressed', 'false');
+        resetTurn();
+      }, 1200);
+    }
+  }
+
+  // Reseta variáveis para próxima jogada
+  function resetTurn() {
+    [firstCard, secondCard] = [null, null];
+    lockBoard = false;
+  }
+
+  // Inicializa o jogo
+  function initGame() {
+    matchesFound = 0;
+    status.textContent = 'Encontre os pares!';
+    createCards();
+    renderBoard();
+    focusedIndex = 0;
+    updateFocus();
+  }
+
+  // Evento clique mouse para virar carta
+  board.addEventListener('click', e => {
+    if (!e.target.classList.contains('card')) return;
+    flipCard(e.target);
+  });
+
+  // Evento teclado para navegação e virar carta
+  board.addEventListener('keydown', e => {
+    const cardCount = cards.length;
+    switch (e.key) {
+      case 'ArrowRight':
+        e.preventDefault();
+        focusedIndex = (focusedIndex + 1) % cardCount;
+        updateFocus();
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        focusedIndex = (focusedIndex - 1 + cardCount) % cardCount;
+        updateFocus();
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        focusedIndex = (focusedIndex + 4) % cardCount;
+        updateFocus();
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        focusedIndex = (focusedIndex - 4 + cardCount) % cardCount;
+        updateFocus();
+        break;
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        const card = board.querySelectorAll('.card')[focusedIndex];
+        if (!card.classList.contains('flipped') && !card.classList.contains('matched')) {
+          flipCard(card);
+        }
+        break;
+    }
+  });
+
+  // Botão reiniciar
+  resetBtn.addEventListener('click', () => {
+    initGame();
+    board.focus();
+  });
+
+  // Inicializa ao carregar
+  initGame();
+})();
+</script>
+
+</body>
+</html>
